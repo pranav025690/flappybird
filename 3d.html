@@ -182,8 +182,8 @@
       const right = new THREE.Vector3(forward.z,0,-forward.x);
       if(keys["w"]) camera.position.addScaledVector(forward, speed);
       if(keys["s"]) camera.position.addScaledVector(forward, -speed);
-      if(keys["a"]) camera.position.addScaledVector(right, -speed);
-      if(keys["d"]) camera.position.addScaledVector(right, speed);
+      if(keys["a"]) camera.position.addScaledVector(right, speed);
+      if(keys["d"]) camera.position.addScaledVector(right, -speed);
 
       const lookTarget = new THREE.Vector3(
         camera.position.x + Math.sin(yaw)*Math.cos(pitch),
