@@ -1,18 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>3D Physics Cubes</title>
   <style>
-    body { margin: 0; overflow: hidden; background-color: #111; }
-    canvas { display: block; }
-    #ui {
-      position: absolute; top: 10px; left: 10px;
-      display: flex; gap: 10px;
-      z-index: 10;
-    }
-    button { padding: 8px 12px; font-size: 14px; cursor: pointer; }
+    body { margin:0; overflow:hidden; background:#111; color:#fff; }
+    #ui { position: absolute; top:10px; left:10px; z-index:10; display:flex; gap:8px; }
+    button { padding:8px 12px; font-size:14px; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -25,11 +20,10 @@
     import * as THREE from "https://esm.sh/three@0.165.0";
     import * as CANNON from "https://esm.sh/cannon-es@0.20.0";
 
-    // --- SCENE ---
     const scene = new THREE.Scene();
 
     // --- CAMERA ---
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 3, 8);
 
     // --- RENDERER ---
@@ -80,17 +74,19 @@
 
     // --- CUBES STORAGE ---
     const cubes = [];
+const fragments = []; // { mesh, body, born, life }
+const flashes = [];   // { light, born, life }
 
     function addCube() {
       const size = 1;
-      const cubeShape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
+      const cubeShape = new CANNON.Box(new CANNON.Vec3(size / 2, size / 2, size / 2));
       const cubeBody = new CANNON.Body({
         mass: 1,
         shape: cubeShape,
         position: new CANNON.Vec3(
-          (Math.random()-0.5)*6,
-          3 + Math.random()*3,
-          (Math.random()-0.5)*6
+          (Math.random() - 0.5) * 6,
+          3 + Math.random() * 3,
+          (Math.random() - 0.5) * 6
         )
       });
       cubeBody.linearDamping = 0.2;
@@ -98,7 +94,7 @@
 
       const cubeMesh = new THREE.Mesh(
         new THREE.BoxGeometry(size, size, size),
-        new THREE.MeshStandardMaterial({ color: Math.random()*0xffffff, roughness: 0.4, metalness: 0.2 })
+        new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff, roughness: 0.4, metalness: 0.2 })
       );
       cubeMesh.castShadow = true;
       scene.add(cubeMesh);
@@ -114,12 +110,95 @@
       cubes.length = 0;
     }
 
+    // --- SHATTER EFFECT ---
+function shatterCube(cube) {
+  const { mesh, body } = cube;
+  const origin = new THREE.Vector3().copy(mesh.position);
+  const baseColor = mesh.material && mesh.material.color ? mesh.material.color.clone() : new THREE.Color(0xffffff);
+
+  // remove original cube (Cannon body removed)
+  scene.remove(mesh);
+  try { world.removeBody(body); } catch (e) {}
+  const ci = cubes.indexOf(cube);
+  if (ci !== -1) cubes.splice(ci, 1);
+
+  // brief flash
+  const flashLight = new THREE.PointLight(0xffe0c8, 5, 10, 2);
+  flashLight.position.copy(origin);
+  scene.add(flashLight);
+  flashes.push({ light: flashLight, born: performance.now(), life: 180 });
+
+  // fragments: lightweight manual simulation (no Cannon bodies)
+  const cubeVel = body && body.velocity ? new THREE.Vector3(body.velocity.x, body.velocity.y, body.velocity.z) : new THREE.Vector3();
+  const pieceCount = Math.min(20, 10 + Math.floor(Math.random() * 12)); // keep count reasonable
+
+  for (let i = 0; i < pieceCount; i++) {
+    const pSize = 0.04 + Math.random() * 0.20;
+    const geom = new THREE.BoxGeometry(pSize, pSize, pSize);
+
+    const color = baseColor.clone().offsetHSL((Math.random()-0.5)*0.08, (Math.random()-0.5)*0.12, (Math.random()-0.5)*0.12);
+    const mat = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.45 + Math.random()*0.45,
+      metalness: 0.0,
+      transparent: true,
+      opacity: 1
+    });
+
+    const pieceMesh = new THREE.Mesh(geom, mat);
+    pieceMesh.castShadow = true;
+
+    const localOffset = new THREE.Vector3(
+      (Math.random()-0.5) * 0.8,
+      (Math.random()-0.5) * 0.8,
+      (Math.random()-0.5) * 0.8
+    ).multiplyScalar(0.5);
+    pieceMesh.position.copy(origin).add(localOffset);
+    pieceMesh.quaternion.set(Math.random(), Math.random(), Math.random(), Math.random()).normalize();
+
+    scene.add(pieceMesh);
+
+    // initial velocity (outward + inherited)
+    const outDir = new THREE.Vector3().subVectors(pieceMesh.position, origin);
+    if (outDir.lengthSq() < 1e-6) outDir.set((Math.random()-0.5), (Math.random()-0.3), (Math.random()-0.5));
+    outDir.normalize();
+    const speed = 2.0 + Math.random() * 5.0;
+    const vel = new THREE.Vector3(
+      cubeVel.x + outDir.x * speed,
+      cubeVel.y + outDir.y * speed + 1.0 * Math.random(),
+      cubeVel.z + outDir.z * speed
+    );
+
+    // angular velocity (radians/sec)
+    const angVel = new THREE.Vector3((Math.random()-0.5)*6, (Math.random()-0.5)*6, (Math.random()-0.5)*6);
+
+    fragments.push({
+      mesh: pieceMesh,
+      pos: pieceMesh.position.clone(),
+      vel,
+      angVel,
+      size: pSize,
+      born: performance.now(),
+      life: 1800 + Math.random() * 1600
+    });
+  }
+}
+
     // --- INITIAL CUBE ---
     addCube();
 
     document.getElementById("addCube").addEventListener("click", addCube);
     document.getElementById("deleteCubes").addEventListener("click", deleteAllCubes);
-
+window.addEventListener('DOMContentLoaded', () => {
+  const addBtn = document.getElementById('addCube');
+  const delBtn = document.getElementById('deleteCubes');
+  if (!addBtn || !delBtn) {
+    console.error('UI buttons not found', { addBtn, delBtn });
+    return;
+  }
+  addBtn.addEventListener('click', addCube);
+  delBtn.addEventListener('click', deleteAllCubes);
+});
     // --- INPUT & CAMERA ---
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -133,109 +212,200 @@
     let pitch = -0.1;
     const keys = {};
 
+    let dragDistance = 5;
+    const dragStep = 3;
+    const dragMin = 1;
+    const dragMax = 80;
+
     window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
     window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
+    window.addEventListener("keydown", e => {
+      const k = e.key.toLowerCase();
+      if (k === "q") {
+        dragDistance = Math.max(dragMin, dragDistance - dragStep);
+        if (draggingCube) draggingCube.grabDistance = dragDistance;
+      } else if (k === "e") {
+        dragDistance = Math.min(dragMax, dragDistance + dragStep);
+        if (draggingCube) draggingCube.grabDistance = dragDistance;
+      } else if (k === "r") {
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(cubes.map(c => c.mesh), false);
+        if (intersects.length > 0) {
+          const picked = intersects[0].object;
+          const cube = cubes.find(c => c.mesh === picked);
+          if (cube) shatterCube(cube);
+        }
+      }
+    });
+
     window.addEventListener("mousedown", e => {
-      if(e.button===0) { isLeftDown=true; tryPickCube(); }
-      if(e.button===2) isRightDown=true;
+      if (e.button === 0) { isLeftDown = true; tryPickCube(); }
+      if (e.button === 2) isRightDown = true;
       prevMouse.set(e.clientX, e.clientY);
     });
 
     window.addEventListener("mouseup", e => {
-      if(e.button===0) { isLeftDown=false; draggingCube=null; }
-      if(e.button===2) isRightDown=false;
+      if (e.button === 0) { isLeftDown = false; draggingCube = null; }
+      if (e.button === 2) isRightDown = false;
     });
 
     window.addEventListener("mousemove", e => {
-      mouse.x = (e.clientX/window.innerWidth)*2-1;
-      mouse.y = -(e.clientY/window.innerHeight)*2+1;
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
-      if(isRightDown){
-        const dx = e.clientX-prevMouse.x;
-        const dy = e.clientY-prevMouse.y;
-        yaw -= dx*0.005;
-        pitch -= dy*0.005;
-        pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+      if (isRightDown) {
+        const dx = e.clientX - prevMouse.x;
+        const dy = e.clientY - prevMouse.y;
+        yaw -= dx * 0.005;
+        pitch -= dy * 0.005;
+        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
       }
       prevMouse.set(e.clientX, e.clientY);
     });
 
-    window.addEventListener("contextmenu", e=>e.preventDefault());
+    window.addEventListener("contextmenu", e => e.preventDefault());
 
     function tryPickCube() {
       raycaster.setFromCamera(mouse, camera);
-      const intersects = [];
-      cubes.forEach(c => {
-        intersects.push(...raycaster.intersectObject(c.mesh));
-      });
-      if(intersects.length>0){
+      const intersects = raycaster.intersectObjects(cubes.map(c => c.mesh), false);
+      if (intersects.length > 0) {
         const picked = intersects[0].object;
-        draggingCube = cubes.find(c=>c.mesh===picked);
+        draggingCube = cubes.find(c => c.mesh === picked);
         grabOffset.copy(intersects[0].point).sub(draggingCube.mesh.position);
+        dragDistance = intersects[0].distance;
+        draggingCube.grabDistance = dragDistance;
+        if (draggingCube.body.wakeUp) draggingCube.body.wakeUp();
       }
     }
 
-    function updateCamera(dt){
-      const speed = 5*dt;
-      const forward = new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw)).normalize();
-      const right = new THREE.Vector3(forward.z,0,-forward.x);
-      if(keys["w"]) camera.position.addScaledVector(forward, speed);
-      if(keys["s"]) camera.position.addScaledVector(forward, -speed);
-      if(keys["a"]) camera.position.addScaledVector(right, speed);
-      if(keys["d"]) camera.position.addScaledVector(right, -speed);
+    function updateCamera(dt) {
+      const speed = 5 * dt;
+      const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+      const right = new THREE.Vector3(forward.z, 0, -forward.x);
+      if (keys["w"]) camera.position.addScaledVector(forward, speed);
+      if (keys["s"]) camera.position.addScaledVector(forward, -speed);
+      if (keys["a"]) camera.position.addScaledVector(right, speed);
+      if (keys["d"]) camera.position.addScaledVector(right, -speed);
 
       const lookTarget = new THREE.Vector3(
-        camera.position.x + Math.sin(yaw)*Math.cos(pitch),
+        camera.position.x + Math.sin(yaw) * Math.cos(pitch),
         camera.position.y + Math.sin(pitch),
-        camera.position.z + Math.cos(yaw)*Math.cos(pitch)
+        camera.position.z + Math.cos(yaw) * Math.cos(pitch)
       );
       camera.lookAt(lookTarget);
     }
 
-    const clock = new THREE.Clock();
-    const fixedStep = 1/60;
+function _updateFragmentsAndFlashes(dt) {
+  const now = performance.now();
 
-    function animate() {
-      requestAnimationFrame(animate);
-      const dt = clock.getDelta();
+  // flashes (light burst)
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const f = flashes[i];
+    const t = (now - f.born) / f.life;
+    if (t >= 1) {
+      scene.remove(f.light);
+      flashes.splice(i, 1);
+      continue;
+    }
+    const intensity = Math.max(0, (1 - t)) * 5;
+    f.light.intensity = intensity;
+    f.light.distance = 6 * (1 - t) + 0.5;
+  }
 
-      updateCamera(dt);
+  // fragments: simple integrator with gravity + floor bounce + fade
+  const gravity = new THREE.Vector3(0, -9.82, 0);
+  for (let i = fragments.length - 1; i >= 0; i--) {
+    const p = fragments[i];
 
-      if(draggingCube && isLeftDown){
-        raycaster.setFromCamera(mouse, camera);
-        const dir = raycaster.ray.direction.clone().normalize();
-        const distance = 5;
-        targetPos.copy(raycaster.ray.origin).add(dir.multiplyScalar(distance));
+    // integrate linear motion
+    p.vel.addScaledVector(gravity, dt); // v += g * dt
+    p.pos.addScaledVector(p.vel, dt);   // x += v * dt
+    p.mesh.position.copy(p.pos);
 
-        const cBody = draggingCube.body;
-        const force = new CANNON.Vec3(
-          (targetPos.x - cBody.position.x)*10,
-          (targetPos.y - cBody.position.y)*10,
-          (targetPos.z - cBody.position.z)*10
-        );
-        cBody.velocity.x += force.x*dt;
-        cBody.velocity.y += force.y*dt;
-        cBody.velocity.z += force.z*dt;
-      }
-
-      world.step(fixedStep);
-
-      cubes.forEach(c=>{
-        c.mesh.position.copy(c.body.position);
-        c.mesh.quaternion.copy(c.body.quaternion);
-      });
-
-      renderer.render(scene, camera);
+    // integrate rotation using angular velocity (axis-angle)
+    const omega = p.angVel.length();
+    if (omega > 1e-5) {
+      const axis = p.angVel.clone().normalize();
+      const angle = omega * dt;
+      const dq = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+      p.mesh.quaternion.multiplyQuaternions(dq, p.mesh.quaternion).normalize();
     }
 
-    animate();
+    // simple floor collision (floor at y=0)
+    const minY = p.size * 0.5;
+    if (p.pos.y <= minY) {
+      p.pos.y = minY;
+      // damp and bounce
+      p.vel.y = -p.vel.y * 0.28;
+      // apply friction to horizontal velocity
+      p.vel.x *= 0.6;
+      p.vel.z *= 0.6;
+      // reduce angular velocity
+      p.angVel.multiplyScalar(0.6);
+    }
 
-    window.addEventListener("resize", ()=>{
-      camera.aspect = window.innerWidth/window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    // fade out and increase roughness slightly
+    const age = now - p.born;
+    const remain = 1 - age / p.life;
+    if (p.mesh.material) {
+      p.mesh.material.opacity = Math.max(0, remain);
+      p.mesh.material.roughness = Math.min(1, 0.5 + (1 - remain) * 0.6);
+      p.mesh.material.needsUpdate = true;
+    }
+
+    if (age > p.life || p.pos.y < -20) {
+      scene.remove(p.mesh);
+      fragments.splice(i, 1);
+    }
+  }
+}
+
+    const clock = new THREE.Clock();
+    const fixedStep = 1 / 60;
+
+    function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  updateCamera(dt);
+
+  if (draggingCube && isLeftDown) {
+    raycaster.setFromCamera(mouse, camera);
+    const dir = raycaster.ray.direction.clone().normalize();
+    const distance = draggingCube.grabDistance || dragDistance;
+    targetPos.copy(raycaster.ray.origin).add(dir.multiplyScalar(distance));
+
+    const desiredPos = new THREE.Vector3().copy(targetPos).sub(grabOffset);
+    const cBody = draggingCube.body;
+    const bodyPos = new THREE.Vector3(cBody.position.x, cBody.position.y, cBody.position.z);
+
+    const stiffness = 8 + distance * 3;
+    const maxSpeed = 30 + distance * 3;
+    const toTarget = new THREE.Vector3().subVectors(desiredPos, bodyPos);
+    const desiredVel = toTarget.multiplyScalar(stiffness);
+    if (desiredVel.length() > maxSpeed) desiredVel.setLength(maxSpeed);
+
+    cBody.velocity.x = desiredVel.x;
+    cBody.velocity.y = desiredVel.y;
+    cBody.velocity.z = desiredVel.z;
+  }
+
+  world.step(fixedStep);
+
+  cubes.forEach(c => {
+    c.mesh.position.copy(c.body.position);
+    c.mesh.quaternion.copy(c.body.quaternion);
+  });
+
+  // update fragments and flashes (pass dt in seconds)
+  _updateFragmentsAndFlashes(dt);
+
+  renderer.render(scene, camera);
+}
+
+// call animate once to start the loop
+animate();
   </script>
 </body>
 </html>
