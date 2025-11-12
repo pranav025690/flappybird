@@ -36,41 +36,140 @@
     renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
 
-    // --- LIGHTING ---
-    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambient);
+        // --- PHYSICS WORLD ---
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -35.0, 0) });
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    dirLight.position.set(10, 10, 10);
-    dirLight.castShadow = true;
-    scene.add(dirLight);
+const islandRadius = 14; // bigger island
+const islandTopY = 0;    // flat top at y = 0
+const islandHeight = 3.6; // thicker slab for a more solid island
 
-    const pointLight = new THREE.PointLight(0xffffff, 2, 50);
-    pointLight.position.set(0, 6, 0);
-    scene.add(pointLight);
+// visual top (green circular top)
+const topGeo = new THREE.CircleGeometry(islandRadius, 64);
+topGeo.rotateX(-Math.PI / 2);
+const topMat = new THREE.MeshStandardMaterial({ color: 0x3aa23a, roughness: 0.7 });
+const islandTop = new THREE.Mesh(topGeo, topMat);
+islandTop.receiveShadow = true;
+islandTop.position.y = islandTopY + 0.04; // slightly higher to avoid z-fighting with skirt
+scene.add(islandTop);
 
-    const lightSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(0.2, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xffffaa })
-    );
-    lightSphere.position.copy(pointLight.position);
-    scene.add(lightSphere);
+// brown skirt (thick side/bottom appearance)
+const skirtGeo = new THREE.CylinderGeometry(islandRadius, islandRadius, islandHeight, 64, 1, false);
+const skirtMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 1.0 });
+const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+// position so top of skirt sits just below the green top
+skirt.position.y = islandTopY - islandHeight / 2 - 0.02;
+skirt.castShadow = true;
+skirt.receiveShadow = true;
+scene.add(skirt);
 
-    // --- PHYSICS WORLD ---
-    const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+// physics: static thin cylinder so cubes rest on island top (same height as visual slab)
+const islandShape = new CANNON.Cylinder(islandRadius, islandRadius, islandHeight, 32);
+const islandBody = new CANNON.Body({ mass: 0 });
+islandBody.addShape(islandShape);
+islandBody.position.set(0, islandTopY - islandHeight / 2, 0);
+world.addBody(islandBody);
 
-    // Floor
-    const floorBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
-    floorBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    world.addBody(floorBody);
+// --- POND --- (moved to the side and sits clearly on the visible top)
+const pondRadius = islandRadius * 0.34; // keep larger pond
+const pondDepth = 0.08;
+const pondBaseGeo = new THREE.CircleGeometry(pondRadius, 64);
+pondBaseGeo.rotateX(-Math.PI / 2);
+const pondBaseMat = new THREE.MeshStandardMaterial({
+  color: 0x1e82ff,
+  roughness: 0.04,
+  metalness: 0.2,
+  transparent: true,
+  opacity: 0.94
+});
+const pond = new THREE.Mesh(pondBaseGeo, pondBaseMat);
+// move pond to the side and place it slightly above the island top to avoid z-fighting
+pond.position.set(0, islandTop.position.y + 0.004, -islandRadius * 0.60);
+  pond.receiveShadow = true;
+  scene.add(pond);
 
-    const floorMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(20, 20),
-      new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8 })
-    );
-    floorMesh.rotation.x = -Math.PI / 2;
-    floorMesh.receiveShadow = true;
-    scene.add(floorMesh);
+// subtle rim for pond (unchanged)
+const rimGeo = new THREE.RingGeometry(pondRadius * 0.90, pondRadius * 1.04, 64);
+rimGeo.rotateX(-Math.PI / 2);
+const rimMat = new THREE.MeshStandardMaterial({ color: 0x234f3a, roughness: 1.0 });
+const rim = new THREE.Mesh(rimGeo, rimMat);
+rim.position.copy(pond.position);
+rim.receiveShadow = true;
+scene.add(rim);
+
+// main sun (directional) — warm, high, casts crisp shadows
+const sun = new THREE.DirectionalLight(0xfff2c4, 2.0);
+sun.position.set(40, 80, -30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -120;
+sun.shadow.camera.right = 120;
+sun.shadow.camera.top = 120;
+sun.shadow.camera.bottom = -120;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 600;
+sun.shadow.bias = -0.0005;
+scene.add(sun);
+
+// gentle ambient fill to avoid dark occluded areas
+const ambient = new THREE.AmbientLight(0xffffff, 0.28);
+scene.add(ambient);
+
+// visible sun disc (visual only)
+const sunDiscMat = new THREE.MeshBasicMaterial({ color: 0xfff2a6, toneMapped: false });
+const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 16), sunDiscMat);
+sunDisc.position.copy(sun.position).normalize().multiplyScalar(180);
+scene.add(sunDisc);
+
+// deep blue sky (large inverted sphere)
+const skyGeo = new THREE.SphereGeometry(800, 32, 16);
+const skyMat = new THREE.MeshBasicMaterial({ color: 0x4faeff, side: THREE.BackSide }); // deeper blue
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+// aim sun at island center for consistent lighting
+sun.target.position.set(0, 0, 0);
+scene.add(sun.target);
+
+// reduce exposure slightly so no crushed blacks
+renderer.toneMappingExposure = 1.25;
+
+// --- BIGGER LAYERED PYRAMID TREE (taller trunk, better overlap) ---
+function addPyramidTree(x, z, layers = 6, baseSize = 2.2, layerHeight = 1.0) {
+  // taller trunk so foliage covers it
+  const trunkHeight = Math.max(2.6, layers * (layerHeight * 0.95));
+  const trunkRadiusTop = 0.22 * (baseSize / 1.8);
+  const trunkRadiusBottom = 0.28 * (baseSize / 1.8);
+  const trunkGeo = new THREE.CylinderGeometry(trunkRadiusTop, trunkRadiusBottom, trunkHeight, 12);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x684021, roughness: 1.0 });
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+  trunk.position.set(x, islandTopY + trunkHeight / 2 - 0.05, z);
+  trunk.castShadow = true;
+  scene.add(trunk);
+
+  // stacked pyramids: start slightly above trunk top and overlap heavily
+  const leafMatBase = new THREE.MeshStandardMaterial({ color: 0x1f6b2a, roughness: 0.55 });
+  const startY = islandTopY + trunkHeight - (layerHeight * 0.3);
+  for (let i = 0; i < layers; i++) {
+    const t = i / Math.max(1, layers - 1);
+    const size = baseSize * (1 - t * 0.7);
+    const height = layerHeight * (1 - t * 0.12);
+    const seg = 4;
+    const coneGeo = new THREE.ConeGeometry(size, height, seg);
+    coneGeo.rotateY(Math.PI / 4);
+    const leafMat = leafMatBase.clone();
+    const cone = new THREE.Mesh(coneGeo, leafMat);
+    // overlap each layer by ~70% so trunk is hidden
+    const y = startY + i * (height * 0.7);
+    cone.position.set(x + (Math.random() - 0.5) * 0.08, y, z + (Math.random() - 0.5) * 0.08);
+    cone.rotation.y = (Math.random() - 0.5) * 0.4;
+    cone.castShadow = true;
+    scene.add(cone);
+  }
+}
+
+// place trees near the outer rim (edge)
+addPyramidTree(-islandRadius * 0.78, islandRadius * 0.20, 8, 2.6, 1.1); // left
+addPyramidTree(islandRadius * 0.78, islandRadius * -0.18, 6, 1.8, 0.95); // right
 
     // --- CUBES STORAGE ---
     const cubes = [];
@@ -314,7 +413,7 @@ function _updateFragmentsAndFlashes(dt) {
   }
 
   // fragments: simple integrator with gravity + floor bounce + fade
-  const gravity = new THREE.Vector3(0, -9.82, 0);
+  const gravity = new THREE.Vector3(0, -35.0, 0);
   for (let i = fragments.length - 1; i >= 0; i--) {
     const p = fragments[i];
 
