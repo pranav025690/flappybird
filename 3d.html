@@ -4,17 +4,163 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>3D Physics Cubes</title>
+
   <style>
-    body { margin:0; overflow:hidden; background:#111; color:#fff; }
-    #ui { position: absolute; top:10px; left:10px; z-index:10; display:flex; gap:8px; }
-    button { padding:8px 12px; font-size:14px; cursor:pointer; }
+    /* === GLOBAL RESET === */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+      background: #111;
+      color: #fff;
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(12px);
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 9999;
+      opacity: 1;
+      visibility: visible;
+      transition: opacity 0.4s ease, visibility 0.4s ease;
+    }
+
+    .overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .menu-center h1 {
+      font-size: 80px;
+      margin: 0 0 32px 0;
+      color: white;
+      text-shadow: 0 0 20px rgba(255,255,255,0.3);
+    }
+
+    .menu-center button {
+      font-size: 20px;
+      padding: 10px 30px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: white;
+      background: #1f6b2a;
+      transition: background 0.3s;
+    }
+
+    .menu-center button:hover {
+      background: #3aa23a;
+    }
+
+    .controls-btn {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      font-size: 16px;
+      padding: 10px 18px;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 6px;
+      background: rgba(0,0,0,0.4);
+      color: white;
+      cursor: pointer;
+      z-index: 10000;
+      transition: background 0.3s;
+    }
+
+    .controls-btn:hover {
+      background: rgba(0,0,0,0.6);
+    }
+
+    .controls-panel {
+      background: rgba(0, 0, 0, 0.8);
+      padding: 32px 48px;
+      border-radius: 10px;
+      max-width: 420px;
+      color: white;
+      text-align: left;
+      font-size: 16px;
+    }
+
+    .controls-panel h2 {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .controls-panel ul {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 20px 0;
+    }
+
+    .controls-panel li {
+      margin: 8px 0;
+    }
+
+    .controls-panel button {
+      display: block;
+      margin: 0 auto;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      background: #1f6b2a;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .controls-panel button:hover {
+      background: #3aa23a;
+    }
   </style>
 </head>
 <body>
-  <div id="ui">
-    <button id="addCube">Add Cube</button>
-    <button id="deleteCubes">Delete All Cubes</button>
+ <div id="mainMenu" class="overlay visible">
+  <div class="menu-center">
+    <h1>QUBE</h1>
+    <button id="startGame">Start</button>
   </div>
+</div>
+
+<button id="controlsBtn" class="controls-btn">Controls</button>
+
+<div id="controlsMenu" class="overlay hidden">
+  <div class="controls-panel">
+    <h2>Controls</h2>
+    <ul>
+      <li><b>Space</b> – Add Cube</li>
+      <li><b>Backspace</b> – Delete All Cubes</li>
+      <li><b>R</b> – Shatter Cube</li>
+      <li><b>W / A / S / D</b> – Move Camera</li>
+      <li><b>Right Click + Drag</b> – Look Around</li>
+      <li><b>Left Click</b> – Pick / Drag Cube</li>
+      <li><b>Q / E</b> – Adjust Drag Distance</li>
+    </ul>
+    <button id="closeControls">Back</button>
+  </div>
+</div>
+
 
   <script type="module">
     import * as THREE from "https://esm.sh/three@0.165.0";
@@ -286,17 +432,9 @@ function shatterCube(cube) {
     // --- INITIAL CUBE ---
     addCube();
 
-    document.getElementById("addCube").addEventListener("click", addCube);
-    document.getElementById("deleteCubes").addEventListener("click", deleteAllCubes);
-window.addEventListener('DOMContentLoaded', () => {
-  const addBtn = document.getElementById('addCube');
-  const delBtn = document.getElementById('deleteCubes');
-  if (!addBtn || !delBtn) {
-    console.error('UI buttons not found', { addBtn, delBtn });
-    return;
-  }
-  addBtn.addEventListener('click', addCube);
-  delBtn.addEventListener('click', deleteAllCubes);
+    window.addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+
 });
     // --- INPUT & CAMERA ---
     const raycaster = new THREE.Raycaster();
@@ -459,6 +597,27 @@ function _updateFragmentsAndFlashes(dt) {
     }
   }
 }
+    // --- MENU LOGIC ---
+    const mainMenu = document.getElementById("mainMenu");
+    const controlsMenu = document.getElementById("controlsMenu");
+    const startGameBtn = document.getElementById("startGame");
+    const controlsBtn = document.getElementById("controlsBtn");
+    const closeControlsBtn = document.getElementById("closeControls");
+
+    let inMenu = true;
+
+    startGameBtn.addEventListener("click", () => {
+      mainMenu.classList.add("hidden");
+      inMenu = false;
+    });
+
+    controlsBtn.addEventListener("click", () => {
+      controlsMenu.classList.remove("hidden");
+    });
+
+    closeControlsBtn.addEventListener("click", () => {
+      controlsMenu.classList.add("hidden");
+    });
 
     const clock = new THREE.Clock();
     const fixedStep = 1 / 60;
