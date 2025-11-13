@@ -6,7 +6,6 @@
   <title>3D Physics Cubes</title>
 
   <style>
-    /* === GLOBAL RESET === */
     html, body {
       margin: 0;
       padding: 0;
@@ -51,7 +50,14 @@
       visibility: hidden;
       pointer-events: none;
     }
-
+   .menu-center {
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     justify-content: center;
+     text-align: center;
+     transform: translateY(-4px); 
+  }
     .menu-center h1 {
       font-size: 80px;
       margin: 0 0 32px 0;
@@ -168,11 +174,10 @@
 
     const scene = new THREE.Scene();
 
-    // --- CAMERA ---
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 3, 8);
 
-    // --- RENDERER ---
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -182,41 +187,38 @@
     renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
 
-        // --- PHYSICS WORLD ---
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -35.0, 0) });
 
-const islandRadius = 14; // bigger island
-const islandTopY = 0;    // flat top at y = 0
-const islandHeight = 3.6; // thicker slab for a more solid island
+const islandRadius = 14; 
+const islandTopY = 0;   
+const islandHeight = 3.6; 
 
-// visual top (green circular top)
+
 const topGeo = new THREE.CircleGeometry(islandRadius, 64);
 topGeo.rotateX(-Math.PI / 2);
 const topMat = new THREE.MeshStandardMaterial({ color: 0x3aa23a, roughness: 0.7 });
 const islandTop = new THREE.Mesh(topGeo, topMat);
 islandTop.receiveShadow = true;
-islandTop.position.y = islandTopY + 0.04; // slightly higher to avoid z-fighting with skirt
+islandTop.position.y = islandTopY + 0.04; 
 scene.add(islandTop);
 
-// brown skirt (thick side/bottom appearance)
 const skirtGeo = new THREE.CylinderGeometry(islandRadius, islandRadius, islandHeight, 64, 1, false);
 const skirtMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2a, roughness: 1.0 });
 const skirt = new THREE.Mesh(skirtGeo, skirtMat);
-// position so top of skirt sits just below the green top
+
 skirt.position.y = islandTopY - islandHeight / 2 - 0.02;
 skirt.castShadow = true;
 skirt.receiveShadow = true;
 scene.add(skirt);
 
-// physics: static thin cylinder so cubes rest on island top (same height as visual slab)
 const islandShape = new CANNON.Cylinder(islandRadius, islandRadius, islandHeight, 32);
 const islandBody = new CANNON.Body({ mass: 0 });
 islandBody.addShape(islandShape);
 islandBody.position.set(0, islandTopY - islandHeight / 2, 0);
 world.addBody(islandBody);
 
-// --- POND --- (moved to the side and sits clearly on the visible top)
-const pondRadius = islandRadius * 0.34; // keep larger pond
+
+const pondRadius = islandRadius * 0.34; 
 const pondDepth = 0.08;
 const pondBaseGeo = new THREE.CircleGeometry(pondRadius, 64);
 pondBaseGeo.rotateX(-Math.PI / 2);
@@ -228,12 +230,12 @@ const pondBaseMat = new THREE.MeshStandardMaterial({
   opacity: 0.94
 });
 const pond = new THREE.Mesh(pondBaseGeo, pondBaseMat);
-// move pond to the side and place it slightly above the island top to avoid z-fighting
+
 pond.position.set(0, islandTop.position.y + 0.004, -islandRadius * 0.60);
   pond.receiveShadow = true;
   scene.add(pond);
 
-// subtle rim for pond (unchanged)
+
 const rimGeo = new THREE.RingGeometry(pondRadius * 0.90, pondRadius * 1.04, 64);
 rimGeo.rotateX(-Math.PI / 2);
 const rimMat = new THREE.MeshStandardMaterial({ color: 0x234f3a, roughness: 1.0 });
@@ -242,7 +244,7 @@ rim.position.copy(pond.position);
 rim.receiveShadow = true;
 scene.add(rim);
 
-// main sun (directional) — warm, high, casts crisp shadows
+
 const sun = new THREE.DirectionalLight(0xfff2c4, 2.0);
 sun.position.set(40, 80, -30);
 sun.castShadow = true;
@@ -256,32 +258,30 @@ sun.shadow.camera.far = 600;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-// gentle ambient fill to avoid dark occluded areas
 const ambient = new THREE.AmbientLight(0xffffff, 0.28);
 scene.add(ambient);
 
-// visible sun disc (visual only)
+
 const sunDiscMat = new THREE.MeshBasicMaterial({ color: 0xfff2a6, toneMapped: false });
 const sunDisc = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 16), sunDiscMat);
 sunDisc.position.copy(sun.position).normalize().multiplyScalar(180);
 scene.add(sunDisc);
 
-// deep blue sky (large inverted sphere)
+
 const skyGeo = new THREE.SphereGeometry(800, 32, 16);
 const skyMat = new THREE.MeshBasicMaterial({ color: 0x4faeff, side: THREE.BackSide }); // deeper blue
 const sky = new THREE.Mesh(skyGeo, skyMat);
 scene.add(sky);
 
-// aim sun at island center for consistent lighting
+
 sun.target.position.set(0, 0, 0);
 scene.add(sun.target);
 
-// reduce exposure slightly so no crushed blacks
+
 renderer.toneMappingExposure = 1.25;
 
-// --- BIGGER LAYERED PYRAMID TREE (taller trunk, better overlap) ---
+
 function addPyramidTree(x, z, layers = 6, baseSize = 2.2, layerHeight = 1.0) {
-  // taller trunk so foliage covers it
   const trunkHeight = Math.max(2.6, layers * (layerHeight * 0.95));
   const trunkRadiusTop = 0.22 * (baseSize / 1.8);
   const trunkRadiusBottom = 0.28 * (baseSize / 1.8);
@@ -292,7 +292,6 @@ function addPyramidTree(x, z, layers = 6, baseSize = 2.2, layerHeight = 1.0) {
   trunk.castShadow = true;
   scene.add(trunk);
 
-  // stacked pyramids: start slightly above trunk top and overlap heavily
   const leafMatBase = new THREE.MeshStandardMaterial({ color: 0x1f6b2a, roughness: 0.55 });
   const startY = islandTopY + trunkHeight - (layerHeight * 0.3);
   for (let i = 0; i < layers; i++) {
@@ -304,7 +303,6 @@ function addPyramidTree(x, z, layers = 6, baseSize = 2.2, layerHeight = 1.0) {
     coneGeo.rotateY(Math.PI / 4);
     const leafMat = leafMatBase.clone();
     const cone = new THREE.Mesh(coneGeo, leafMat);
-    // overlap each layer by ~70% so trunk is hidden
     const y = startY + i * (height * 0.7);
     cone.position.set(x + (Math.random() - 0.5) * 0.08, y, z + (Math.random() - 0.5) * 0.08);
     cone.rotation.y = (Math.random() - 0.5) * 0.4;
@@ -313,14 +311,12 @@ function addPyramidTree(x, z, layers = 6, baseSize = 2.2, layerHeight = 1.0) {
   }
 }
 
-// place trees near the outer rim (edge)
-addPyramidTree(-islandRadius * 0.78, islandRadius * 0.20, 8, 2.6, 1.1); // left
-addPyramidTree(islandRadius * 0.78, islandRadius * -0.18, 6, 1.8, 0.95); // right
+addPyramidTree(-islandRadius * 0.78, islandRadius * 0.20, 8, 2.6, 1.1); 
+addPyramidTree(islandRadius * 0.78, islandRadius * -0.18, 6, 1.8, 0.95); 
 
-    // --- CUBES STORAGE ---
     const cubes = [];
-const fragments = []; // { mesh, body, born, life }
-const flashes = [];   // { light, born, life }
+const fragments = []; 
+const flashes = [];   
 
     function addCube() {
       const size = 1;
@@ -355,27 +351,22 @@ const flashes = [];   // { light, born, life }
       cubes.length = 0;
     }
 
-    // --- SHATTER EFFECT ---
 function shatterCube(cube) {
   const { mesh, body } = cube;
   const origin = new THREE.Vector3().copy(mesh.position);
   const baseColor = mesh.material && mesh.material.color ? mesh.material.color.clone() : new THREE.Color(0xffffff);
-
-  // remove original cube (Cannon body removed)
   scene.remove(mesh);
   try { world.removeBody(body); } catch (e) {}
   const ci = cubes.indexOf(cube);
   if (ci !== -1) cubes.splice(ci, 1);
 
-  // brief flash
   const flashLight = new THREE.PointLight(0xffe0c8, 5, 10, 2);
   flashLight.position.copy(origin);
   scene.add(flashLight);
   flashes.push({ light: flashLight, born: performance.now(), life: 180 });
 
-  // fragments: lightweight manual simulation (no Cannon bodies)
   const cubeVel = body && body.velocity ? new THREE.Vector3(body.velocity.x, body.velocity.y, body.velocity.z) : new THREE.Vector3();
-  const pieceCount = Math.min(20, 10 + Math.floor(Math.random() * 12)); // keep count reasonable
+  const pieceCount = Math.min(20, 10 + Math.floor(Math.random() * 12));
 
   for (let i = 0; i < pieceCount; i++) {
     const pSize = 0.04 + Math.random() * 0.20;
@@ -429,14 +420,12 @@ function shatterCube(cube) {
   }
 }
 
-    // --- INITIAL CUBE ---
     addCube();
 
     window.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
 
 });
-    // --- INPUT & CAMERA ---
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let isLeftDown = false;
@@ -536,7 +525,7 @@ function shatterCube(cube) {
 function _updateFragmentsAndFlashes(dt) {
   const now = performance.now();
 
-  // flashes (light burst)
+
   for (let i = flashes.length - 1; i >= 0; i--) {
     const f = flashes[i];
     const t = (now - f.born) / f.life;
@@ -550,17 +539,14 @@ function _updateFragmentsAndFlashes(dt) {
     f.light.distance = 6 * (1 - t) + 0.5;
   }
 
-  // fragments: simple integrator with gravity + floor bounce + fade
   const gravity = new THREE.Vector3(0, -35.0, 0);
   for (let i = fragments.length - 1; i >= 0; i--) {
     const p = fragments[i];
 
-    // integrate linear motion
     p.vel.addScaledVector(gravity, dt); // v += g * dt
     p.pos.addScaledVector(p.vel, dt);   // x += v * dt
     p.mesh.position.copy(p.pos);
 
-    // integrate rotation using angular velocity (axis-angle)
     const omega = p.angVel.length();
     if (omega > 1e-5) {
       const axis = p.angVel.clone().normalize();
@@ -569,20 +555,15 @@ function _updateFragmentsAndFlashes(dt) {
       p.mesh.quaternion.multiplyQuaternions(dq, p.mesh.quaternion).normalize();
     }
 
-    // simple floor collision (floor at y=0)
     const minY = p.size * 0.5;
     if (p.pos.y <= minY) {
       p.pos.y = minY;
-      // damp and bounce
       p.vel.y = -p.vel.y * 0.28;
-      // apply friction to horizontal velocity
       p.vel.x *= 0.6;
       p.vel.z *= 0.6;
-      // reduce angular velocity
       p.angVel.multiplyScalar(0.6);
     }
 
-    // fade out and increase roughness slightly
     const age = now - p.born;
     const remain = 1 - age / p.life;
     if (p.mesh.material) {
@@ -597,7 +578,7 @@ function _updateFragmentsAndFlashes(dt) {
     }
   }
 }
-    // --- MENU LOGIC ---
+
     const mainMenu = document.getElementById("mainMenu");
     const controlsMenu = document.getElementById("controlsMenu");
     const startGameBtn = document.getElementById("startGame");
@@ -618,7 +599,24 @@ function _updateFragmentsAndFlashes(dt) {
     closeControlsBtn.addEventListener("click", () => {
       controlsMenu.classList.add("hidden");
     });
+window.addEventListener("keydown", e => {
 
+  if (e.code === "Space") {
+    e.preventDefault();
+    if (inMenu) {
+      startGameBtn.click();
+    } else {
+      addCube();
+    }
+    return;
+  }
+
+  if (e.key === "Backspace") {
+    e.preventDefault();
+    deleteAllCubes();
+    return;
+  }
+});
     const clock = new THREE.Clock();
     const fixedStep = 1 / 60;
 
@@ -656,13 +654,10 @@ function _updateFragmentsAndFlashes(dt) {
     c.mesh.quaternion.copy(c.body.quaternion);
   });
 
-  // update fragments and flashes (pass dt in seconds)
   _updateFragmentsAndFlashes(dt);
 
   renderer.render(scene, camera);
 }
-
-// call animate once to start the loop
 animate();
   </script>
 </body>
